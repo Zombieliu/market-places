@@ -52,12 +52,12 @@ impl Contract {
                 log!("{:#?}",last_price);
                 Promise::new(last_owner).transfer(last_price);
                 last_sale.bids.remove(&ft_token_id).expect("No bids");
-                let mut sale = self.internal_remove_sale(nft_contract_id.into(), token_id);
+                let sale = self.internal_remove_sale(nft_contract_id.into(), token_id);
                 let owner_id = env::predecessor_account_id();
                 assert_eq!(owner_id, sale.owner_id, "Must be sale owner");
             }
             None =>{
-                let mut sale = self.internal_remove_sale(nft_contract_id.into(), token_id);
+                let sale = self.internal_remove_sale(nft_contract_id.into(), token_id);
                 let owner_id = env::predecessor_account_id();
                 assert_eq!(owner_id, sale.owner_id, "Must be sale owner");
             }

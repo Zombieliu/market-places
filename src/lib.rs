@@ -21,7 +21,7 @@ mod sale_views;
 mod sale;
 mod external;
 
-const GAS_FOR_FT_TRANSFER: Gas = Gas(5_000_000_000_000);
+
 /// per byes
 const STORAGE_PER_SALE: u128 = 1000 * STORAGE_PRICE_PER_BYTE;
 static DELIMETER: &str = "||";

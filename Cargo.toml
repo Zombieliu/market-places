@@ -1,5 +1,5 @@
 [package]
-name = "nft-marketpalces"
+name = "nft-marketplaces"
 version = "1.1.0"
 authors = ["Near Inc <henry@web3games.org>"]
 edition = "2018"

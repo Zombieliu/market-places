@@ -1,9 +1,13 @@
 use std::convert::TryInto;
 use near_contract_standards::non_fungible_token::metadata::TokenMetadata;
 use near_sdk::{AccountId};
-use near_sdk_sim::{ContractAccount, STORAGE_AMOUNT, UserAccount, call, deploy, init_simulator, to_yocto, view};
+use near_sdk_sim::{ContractAccount, STORAGE_AMOUNT, UserAccount, call, deploy, init_simulator, to_yocto,view};
 use non_fungible_token::ContractContract;
-use nft_marketpalces::ContractContract as MarketContract;
+use nft_marketplaces::{ContractContract as MarketContract, FungibleTokenId};
+use near_sdk_sim::borsh::maybestd::collections::HashMap;
+use near_sdk::json_types::U128;
+use near_sdk::serde_json::json;
+
 
 
 
@@ -75,18 +79,29 @@ fn sample_token_metadata() -> TokenMetadata {
     }
 }
 
-#[test]
-fn init_test() {
-    let (_nft_master_account, _nft_contract_account, _nft_alice) = nft_init(to_yocto("10000"));
+
+fn market_approve_data() -> String {
+    let mut near:HashMap<FungibleTokenId, U128> = HashMap::new();
+    near.insert("near".parse().unwrap(),U128(100));
+    json!({
+        "sale_conditions": near,
+        "is_auction": "",
+        "is_royalties": "",
+        "royalties": "",
+    }).to_string()
 }
 
 #[test]
+fn init_test() {
+    let (_nft_master_account, _nft_contract_account, _nft_alice) = nft_init(to_yocto("500000"));
+    let (_market_master_account, _market_contract_account, _market_bob) = market_places_init(to_yocto("500000"));
+}
+
+
+#[test]
 fn check_promise() {
-    let (_nft_master_account, nft_contract, nft_alice) = nft_init(to_yocto("10000"));
-    let (market_master_account, market_contract_account, market_bob) = market_places_init(to_yocto("10000"));
-
-
-
+    let (_nft_master_account, nft_contract, nft_alice) = nft_init(to_yocto("500000"));
+    let (_market_master_account, market_contract_account, market_bob) = market_places_init(to_yocto("500000"));
     let token_id = "P001".to_string();
     //alice.near
     let token_owner_id = nft_alice.account_id().try_into().unwrap();
@@ -101,29 +116,37 @@ fn check_promise() {
     // let promise_outcomes = res1.get_receipt_results();
     println!("{:#?}", res1);
 
-    let depositAccount = market_bob.account_id().try_into().unwrap();
     // storage_deposit
+    let deposit_account:AccountId = nft_alice.account_id().try_into().unwrap();
     let res2 =call!(
         market_bob,
-        market_contract_account.storage_deposit(depositAccount),
+        market_contract_account.storage_deposit(Some(deposit_account)),
         deposit = STORAGE_AMOUNT
     );
     println!("{:#?}", res2);
 
+    //near
+    let ft_token = view!(market_contract_account.supported_ft_token_ids());
+    println!("{:#?}",ft_token.unwrap_json_value());
 
-    // let res2 = view!(market_contract_account.supported_ft_token_ids());
-    // println!("{:#?}",res2.unwrap_json_value());
+    // test storage_balance
+    let alice_account = nft_alice.account_id().try_into().unwrap();
+    let storage_balance_of = view!(market_contract_account.storage_balance_of(alice_account));
+    println!("{:#?}",storage_balance_of.unwrap_json_value());
 
-    //contract2.near
-    // let account_id = market_contract_account.account_id();
-    // // println!("{:#?}", account_id);
-    // let msg = Some("arr".to_string());
-    // let token_id2 = "P001".to_string();
-    // let res2 =call!(
-    //     nft_alice,
-    //     nft_contract.nft_approve(token_id2, account_id,msg),
-    //     deposit = STORAGE_AMOUNT
-    // );
-    // println!("{:#?}", res2);
+    // println!("{:#?}",market_contract_account.contract)
+
+    //test nft_approve to market_places
+    let msg = Some(market_approve_data());
+    let token_id2 = "P001".to_string();
+    let account_id = market_contract_account.account_id().try_into().unwrap();
+    // println!("{:#?}", account_id);
+    let res2 =call!(
+        nft_alice,
+        nft_contract.nft_approve(token_id2, account_id,msg),
+        deposit = STORAGE_AMOUNT
+    );
+    println!("{:#?}", res2);
+    println!("{:#?}",res2.unwrap_json_value());
 
 }
