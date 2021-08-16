@@ -1,28 +1,46 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::collections::{UnorderedSet, LookupMap};
-use near_sdk::{near_bindgen, AccountId, PanicOnDefault, BorshStorageKey, Balance, assert_one_yocto, Promise};
-use near_sdk::env;
+use near_sdk::collections::{UnorderedSet, LookupMap, UnorderedMap};
 use near_sdk::env::STORAGE_PRICE_PER_BYTE;
 use near_contract_standards::storage_management::StorageBalanceBounds;
 use near_sdk::json_types::U128;
 use near_contract_standards::non_fungible_token::TokenId;
 use near_sdk::borsh::maybestd::collections::HashMap;
-use near_sdk::log;
+use near_sdk::json_types::U64;
+use near_sdk::{
+    near_bindgen, AccountId, PanicOnDefault, BorshStorageKey,
+    Balance, assert_one_yocto, Promise, Gas,env,log,CryptoHash,ext_contract,promise_result_as_success};
+use std::cmp::min;
 
+use crate::external::*;
+use crate::sale::{Sale, Bid};
+use crate::internal::*;
 
 mod internal;
 mod nft_callbacks;
+mod sale_views;
+mod sale;
+mod external;
 
-
+const GAS_FOR_FT_TRANSFER: Gas = Gas(5_000_000_000_000);
 /// per byes
 const STORAGE_PER_SALE: u128 = 1000 * STORAGE_PRICE_PER_BYTE;
+static DELIMETER: &str = "||";
+
+const NEAR:u128 = 1000000000000000000000000;
+
+
+/// greedy max Tgas for resolve_purchase
+const GAS_FOR_ROYALTIES: Gas = Gas(115_000_000_000_000);
+const NO_DEPOSIT: Balance = 0;
+const GAS_FOR_NFT_TRANSFER: Gas = Gas(15_000_000_000_000);
 
 pub type FungibleTokenId = AccountId;
 pub type ContractAndTokenId = String;
 pub type SaleConditions = HashMap<FungibleTokenId, U128>;
 pub type Amount = u8;
 pub type Royalties = Option<HashMap<ContractAndTokenId,Amount>>;
+pub type Bids = HashMap<FungibleTokenId, Bid>;
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -31,28 +49,37 @@ pub struct Contract {
     pub ft_token_ids: UnorderedSet<AccountId>,
     pub storage_deposits: LookupMap<AccountId, Balance>,
     pub by_owner_id: LookupMap<AccountId, UnorderedSet<ContractAndTokenId>>,
+    pub sales: UnorderedMap<ContractAndTokenId, Sale>,
+    pub by_nft_contract_id: LookupMap<AccountId, UnorderedSet<TokenId>>,
 }
 
 /// Helper structure to for keys of the persistent collections.
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKey {
+    Sales,
     FTTokenIds,
     StorageDeposits,
     ByOwnerId,
+    ByNFTContractId,
+    ByOwnerIdInner { account_id_hash: CryptoHash },
+    ByNFTContractIdInner { account_id_hash: CryptoHash },
 }
 
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new(owner_id: AccountId){
+    pub fn new(owner_id: AccountId) -> Self {
        let mut this =  Self {
             owner_id,
             ft_token_ids: UnorderedSet::new(StorageKey::FTTokenIds),
             storage_deposits: LookupMap::new(StorageKey::StorageDeposits),
             by_owner_id: LookupMap::new(StorageKey::ByOwnerId),
+            sales: UnorderedMap::new(StorageKey::Sales),
+            by_nft_contract_id: LookupMap::new(StorageKey::ByNFTContractId),
        };
         // support NEAR by default
        this.ft_token_ids.insert(&AccountId::new_unchecked("near".to_string()));
+       this
     }
 
     /// only contract owner can add support FT token list
@@ -75,7 +102,7 @@ impl Contract {
             .unwrap_or_else(env::predecessor_account_id);
 
         let deposit = env::attached_deposit();
-        // about 1kb 10TG
+        // about 1kb 10TG 0.001Near
         assert!(
             deposit >= STORAGE_PER_SALE,
             "Requires minimum deposit of {}",

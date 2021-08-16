@@ -1,15 +1,14 @@
 use crate::*;
-use near_sdk::promise_result_as_success;
 
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize,Debug,Clone)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Bid {
     pub owner_id: AccountId,
     pub price: U128,
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize,Debug,Clone)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Sale {
     pub owner_id: AccountId,
@@ -34,258 +33,224 @@ pub struct PurchaseArgs {
 
 #[near_bindgen]
 impl Contract {
-    // /// for add sale see: nft_callbacks.rs
-    //
-    // /// TODO remove without redirect to wallet? panic reverts
-    // #[payable]
-    // pub fn remove_sale(&mut self, nft_contract_id: AccountId, token_id: String) {
-    //     assert_one_yocto();
-    //     let sale = self.internal_remove_sale(nft_contract_id.into(), token_id);
-    //     let owner_id = env::predecessor_account_id();
-    //     assert_eq!(owner_id, sale.owner_id, "Must be sale owner");
-    //     self.refund_all_bids(&sale.bids);
-    // }
-    //
-    // #[payable]
-    // pub fn update_price(
-    //     &mut self,
-    //     nft_contract_id: AccountId,
-    //     token_id: String,
-    //     ft_token_id: AccountId,
-    //     price: U128,
-    // ) {
-    //     assert_one_yocto();
-    //     let contract_id: AccountId = nft_contract_id.into();
-    //     let contract_and_token_id = format!("{}{}{}", contract_id, DELIMETER, token_id);
-    //     let mut sale = self.sales.get(&contract_and_token_id).expect("No sale");
-    //     assert_eq!(
-    //         env::predecessor_account_id(),
-    //         sale.owner_id,
-    //         "Must be sale owner"
-    //     );
-    //     if !self.ft_token_ids.contains(&ft_token_id) {
-    //         env::panic_str(format!("Token {} not supported by this market", ft_token_id).as_ref());
-    //     }
-    //     sale.sale_conditions.insert(ft_token_id.into(), price);
-    //     self.sales.insert(&contract_and_token_id, &sale);
-    // }
+    // for add sale see: nft_callbacks.rs
 
-    // #[payable]
-    // pub fn offer(&mut self, nft_contract_id: AccountId, token_id: String) {
-    //     let contract_id: AccountId = nft_contract_id.into();
-    //     let contract_and_token_id = format!("{}{}{}", contract_id, DELIMETER, token_id);
-    //     let mut sale = self.sales.get(&contract_and_token_id).expect("No sale");
-    //     let buyer_id = env::predecessor_account_id();
-    //     assert_ne!(sale.owner_id, buyer_id, "Cannot bid on your own sale.");
-    //     let ft_token_id = AccountId::from("near".parse().unwrap());
-    //     let price = sale
-    //         .sale_conditions
-    //         .get(&ft_token_id)
-    //         .expect("Not for sale in NEAR")
-    //         .0;
-    //
-    //     let deposit = env::attached_deposit();
-    //     assert!(deposit > 0, "Attached deposit must be greater than 0");
-
-        // if !sale.is_auction && deposit == price {
-        //     self.process_purchase(
-        //         contract_id,
-        //         token_id,
-        //         ft_token_id,
-        //         U128(deposit),
-        //         buyer_id,
-        //     );
-        // } else {
-        //     if sale.is_auction && price > 0 {
-        //         assert!(deposit >= price, "Attached deposit must be greater than reserve price");
-        //     }
-        //     self.add_bid(
-        //         contract_and_token_id,
-        //         deposit,
-        //         ft_token_id,
-        //         buyer_id,
-        //         &mut sale,
-        //     );
-        // }
+    /// TODO remove without redirect to wallet? panic reverts
+    #[payable]
+    pub fn remove_sale(&mut self, nft_contract_id: AccountId, token_id: String,ft_token_id:AccountId) {
+        assert_one_yocto();
+        let contract_token_id = format!("{}{}{}",nft_contract_id,DELIMETER,token_id);
+        log!("{:#?}",contract_token_id);
+        let mut last_sale = self.get_sale(contract_token_id).unwrap();
+        log!("{:#?}",last_sale);
+        let bid = last_sale.bids.get(&ft_token_id);
+        match bid{
+            Some(bid) =>{
+                let last_owner = bid.clone().owner_id;
+                log!("{:#?}",last_owner);
+                let last_price = bid.clone().price.0;
+                log!("{:#?}",last_price);
+                Promise::new(last_owner).transfer(last_price);
+                last_sale.bids.remove(&ft_token_id).expect("No bids");
+                let mut sale = self.internal_remove_sale(nft_contract_id.into(), token_id);
+                let owner_id = env::predecessor_account_id();
+                assert_eq!(owner_id, sale.owner_id, "Must be sale owner");
+            }
+            None =>{
+                let mut sale = self.internal_remove_sale(nft_contract_id.into(), token_id);
+                let owner_id = env::predecessor_account_id();
+                assert_eq!(owner_id, sale.owner_id, "Must be sale owner");
+            }
+        }
     }
 
-    // #[private]
-    // pub fn add_bid(
-    //     &mut self,
-    //     contract_and_token_id: ContractAndTokenId,
-    //     amount: Balance,
-    //     ft_token_id: AccountId,
-    //     buyer_id: AccountId,
-    //     sale: &mut Sale,
-    // ) {
-    //     // store a bid and refund any current bid lower
-    //     let new_bid = Bid {
-    //         owner_id: buyer_id,
-    //         price: U128(amount),
-    //     };
-    //
-    //     let bids_for_token_id = sale.bids.entry(ft_token_id.clone()).or_insert_with(Vec::new);
-    //
-    //     if !bids_for_token_id.is_empty() {
-    //         let current_bid = &bids_for_token_id[bids_for_token_id.len()-1];
-    //         assert!(
-    //             amount > current_bid.price.0,
-    //             "Can't pay less than or equal to current bid price: {}",
-    //             current_bid.price.0
-    //         );
-    //         if ft_token_id == AccountId::from("near".parse().unwrap()) {
-    //             Promise::new(current_bid.owner_id.clone()).transfer(u128::from(current_bid.price));
-    //         } else {
-    //             ext_contract::ft_transfer(
-    //                 current_bid.owner_id.clone(),
-    //                 current_bid.price,
-    //                 None,
-    //                 ft_token_id,
-    //                 1,
-    //                 GAS_FOR_FT_TRANSFER,
-    //             );
-    //         }
-    //     }
-    //
-    //     bids_for_token_id.push(new_bid);
-    //     if bids_for_token_id.len() > self.bid_history_length as usize {
-    //         //remove the last bid
-    //         bids_for_token_id.remove(0);
-    //     }
-    //
-    //     //set current balance
-    //     self.sales.insert(&contract_and_token_id, &sale);
-    // }
-    //
-    // pub fn accept_offer(
-    //     &mut self,
-    //     nft_contract_id: AccountId,
-    //     token_id: String,
-    //     ft_token_id: AccountId,
-    // ) {
-    //     let contract_id: AccountId = nft_contract_id.into();
-    //     let contract_and_token_id = format!("{}{}{}", contract_id.clone(), DELIMETER, token_id.clone());
-    //     // remove bid before proceeding to process purchase
-    //     let mut sale = self.sales.get(&contract_and_token_id).expect("No sale");
-    //     let bids_for_token_id = sale.bids.remove(&ft_token_id).expect("No bids");
-    //     let bid = &bids_for_token_id[bids_for_token_id.len()-1];
-    //     self.sales.insert(&contract_and_token_id, &sale);
-    //     // panics at `self.internal_remove_sale` and reverts above if predecessor is not sale.owner_id
-    //     self.process_purchase(
-    //         contract_id,
-    //         token_id,
-    //         ft_token_id.into(),
-    //         bid.price,
-    //         bid.owner_id.clone(),
-    //     );
-    // }
-    //
-    // #[private]
-    // pub fn process_purchase(
-    //     &mut self,
-    //     nft_contract_id: AccountId,
-    //     token_id: String,
-    //     ft_token_id: AccountId,
-    //     price: U128,
-    //     buyer_id: AccountId,
-    // ) -> Promise {
-    //     let sale = self.internal_remove_sale(nft_contract_id.clone(), token_id.clone());
-    //
-    //     ext_contract::nft_transfer_payout(
-    //         buyer_id.clone(),
-    //         token_id,
-    //         sale.approval_id,
-    //         None,
-    //         price,
-    //         nft_contract_id,
-    //         1,
-    //         GAS_FOR_NFT_TRANSFER,
-    //     )
-    //     .then(ext_self::resolve_purchase(
-    //         ft_token_id,
-    //         buyer_id,
-    //         sale,
-    //         price,
-    //         env::current_account_id(),
-    //         NO_DEPOSIT,
-    //         GAS_FOR_ROYALTIES,
-    //     ))
-    // }
-    //
-    // /// self callback
-    //
-    // #[private]
-    // pub fn resolve_purchase(
-    //     &mut self,
-    //     ft_token_id: AccountId,
-    //     buyer_id: AccountId,
-    //     sale: Sale,
-    //     price: U128,
-    // ) -> U128 {
-    //
-    //     // checking for payout information
-    //     let payout_option = promise_result_as_success().and_then(|value| {
-    //         // None means a bad payout from bad NFT contract
-    //         near_sdk::serde_json::from_slice::<Payout>(&value)
-    //             .ok()
-    //             .and_then(|payout| {
-    //                 // gas to do 10 FT transfers (and definitely 10 NEAR transfers)
-    //                 if payout.len() + sale.bids.len() > 10 || payout.is_empty() {
-    //                     env::log_str(format!("Cannot have more than 10 royalties and sale.bids refunds").as_ref());
-    //                     None
-    //                 } else {
-    //                     // TODO off by 1 e.g. payouts are fractions of 3333 + 3333 + 3333
-    //                     let mut remainder = price.0;
-    //                     for &value in payout.values() {
-    //                         remainder = remainder.checked_sub(value.0)?;
-    //                     }
-    //                     if remainder == 0 || remainder == 1 {
-    //                         Some(payout)
-    //                     } else {
-    //                         None
-    //                     }
-    //                 }
-    //             })
-    //     });
-    //     // is payout option valid?
-    //     let payout = if let Some(payout_option) = payout_option {
-    //         payout_option
-    //     } else {
-    //         if ft_token_id == AccountId::from("near".parse().unwrap()) {
-    //             Promise::new(buyer_id).transfer(u128::from(price));
-    //         }
-    //         // leave function and return all FTs in ft_resolve_transfer
-    //         return price;
-    //     };
-    //     // Going to payout everyone, first return all outstanding bids (accepted offer bid was already removed)
-    //     self.refund_all_bids(&sale.bids);
-    //
-    //     // NEAR payouts
-    //     if ft_token_id == AccountId::from("near".parse().unwrap()) {
-    //         for (receiver_id, amount) in payout {
-    //             Promise::new(receiver_id).transfer(amount.0);
-    //         }
-    //         // refund all FTs (won't be any)
-    //         price
-    //     } else {
-    //         // FT payouts
-    //         for (receiver_id, amount) in payout {
-    //             ext_contract::ft_transfer(
-    //                 receiver_id,
-    //                 amount,
-    //                 None,
-    //                 ft_token_id,
-    //                 1,
-    //                 GAS_FOR_FT_TRANSFER,
-    //             );
-    //         }
-    //         // keep all FTs (already transferred for payouts)
-    //         U128(0)
-    //     }
-    // }
+    #[payable]
+    pub fn update_price(
+        &mut self,
+        nft_contract_id: AccountId,
+        token_id: String,
+        ft_token_id: AccountId,
+        price: U128,
+    ) {
+        assert_one_yocto();
+        let contract_id: AccountId = nft_contract_id;
+        let contract_and_token_id = format!("{}{}{}", contract_id, DELIMETER, token_id);
+        let mut sale = self.sales.get(&contract_and_token_id).expect("No sale");
+        assert_eq!(
+            env::predecessor_account_id(),
+            sale.owner_id,
+            "Must be sale owner"
+        );
+        let bid = sale.bids.get(&ft_token_id);
+        match bid {
+            Some(bid) => {
+                assert!(price.0 > bid.price.0, "update price must more than current bid");
+            }
+            None => {}
+        }
+        if !self.ft_token_ids.contains(&ft_token_id) {
+            env::panic_str(format!("Token {} not supported by this market", ft_token_id).as_ref());
+        }
+        sale.sale_conditions.insert(ft_token_id, price);
+        self.sales.insert(&contract_and_token_id, &sale);
+    }
+
+    #[payable]
+    pub fn offer(&mut self, nft_contract_id: AccountId, token_id: String) {
+        let contract_id: AccountId = nft_contract_id.into();
+        let contract_and_token_id = format!("{}{}{}", contract_id, DELIMETER, token_id);
+        let mut sale = self.sales.get(&contract_and_token_id).expect("No sale");
+        let buyer_id = env::predecessor_account_id();
+        assert_ne!(sale.owner_id, buyer_id, "Cannot bid on your own sale.");
+        let ft_token_id = "near".parse().unwrap();
+        let price = sale
+            .sale_conditions
+            .get(&ft_token_id)
+            .expect("Not for sale in NEAR")
+            ;
+        let deposit = env::attached_deposit();
+        assert!(deposit > 0, "Attached deposit must be greater than 0");
+
+        // log!("{} {:#?} {:#?}",sale.is_auction,U128(deposit),U128(price.clone().0 * NEAR));
+        if !sale.is_auction && U128(deposit) == U128(price.clone().0 * NEAR){
+            self.process_purchase(
+                contract_id,
+                token_id,
+                ft_token_id.clone(),
+                U128(deposit),
+                buyer_id.clone(),
+            );
+        }
+       if !sale.is_auction && U128(deposit).0 < U128(price.clone().0 * NEAR).0{
+            self.add_bid(
+                contract_and_token_id,
+                deposit,
+                ft_token_id.clone(),
+                buyer_id.clone(),
+                &mut sale,
+            );
+        }
+
+    }
+
+    #[private]
+    pub fn add_bid(
+        &mut self,
+        contract_and_token_id: ContractAndTokenId,
+        amount: Balance,
+        ft_token_id: AccountId,
+        buyer_id: AccountId,
+        sale: &mut Sale,
+    ) {
+        // store a bid and refund any current bid lower
+        let new_bid = Bid {
+            owner_id: buyer_id,
+            price: U128(amount),
+        };
+
+        //get last bid
+        let bid = sale.bids.get(&ft_token_id);
+        match bid {
+            Some(bid) => {
+                if ft_token_id == AccountId::from("near".parse().unwrap()) {
+                let last_owner = bid.clone().owner_id;
+                let last_price = bid.clone().price.0;
+                Promise::new(last_owner).transfer(last_price);
+                sale.bids.insert(ft_token_id,new_bid.clone());
+                self.sales.insert(&contract_and_token_id, &sale);
+            } },
+            None => {
+                if ft_token_id == AccountId::from("near".parse().unwrap()) {
+                    sale.bids.insert(ft_token_id,new_bid.clone());
+                    self.sales.insert(&contract_and_token_id, &sale);
+                    log!("{:#?}",&sale);
+                }
+            }
+        }
+    }
+
+    pub fn accept_offer(
+        &mut self,
+        nft_contract_id: AccountId,
+        token_id: String,
+        ft_token_id: AccountId,
+    ) {
+        let contract_id: AccountId = nft_contract_id.into();
+        let contract_and_token_id = format!("{}{}{}", contract_id.clone(), DELIMETER, token_id.clone());
+        // remove bid before proceeding to process purchase
+        let mut sale = self.sales.get(&contract_and_token_id).expect("No sale");
+        let bids_for_token_id = sale.bids.remove(&ft_token_id).expect("No bids");
+        let bid = &bids_for_token_id;
+        self.sales.insert(&contract_and_token_id, &sale);
+        // panics at `self.internal_remove_sale` and reverts above if predecessor is not sale.owner_id
+        self.process_purchase(
+            contract_id,
+            token_id,
+            ft_token_id.into(),
+            bid.price,
+            bid.owner_id.clone(),
+        );
+    }
+
+    #[private]
+    pub fn process_purchase(
+        &mut self,
+        nft_contract_id: AccountId,
+        token_id: String,
+        ft_token_id: AccountId,
+        price: U128,
+        buyer_id: AccountId,
+    ) -> Promise {
+        let sale = self.internal_remove_sale(nft_contract_id.clone(), token_id.clone());
+
+        ext_contract::nft_transfer(
+            buyer_id.clone(),
+            token_id,
+            Some(sale.approval_id),
+            None,
+            nft_contract_id,
+            1,
+            GAS_FOR_NFT_TRANSFER,
+        )
+        .then(ext_self::resolve_purchase(
+            ft_token_id,
+            buyer_id,
+            sale,
+            price,
+            env::current_account_id(),
+            NO_DEPOSIT,
+            GAS_FOR_ROYALTIES,
+        ))
+    }
+
+
+
+    #[private]
+    pub fn resolve_purchase(
+        &mut self,
+        ft_token_id: AccountId,
+        buyer_id: AccountId,
+        sale: Sale,
+        price: U128,
+    ) -> U128 {
+
+        // checking for payout information
+        let tx_state = promise_result_as_success();
+        log!("{:#?} {:#?} {:#?} {:#?} {:#?}",ft_token_id,buyer_id,price,tx_state,sale);
+        let service_fee = service_fee_calculate(price);
+        let seller = sale.owner_id;
+        let amount:Balance = price.0 - service_fee;
+        log!("{:#?} {:#?}",amount,service_fee);
+        Promise::new(seller).transfer(amount);
+        U128(1)
+    }
 }
 
-/// self call
+
+    fn service_fee_calculate(price:U128) -> u128{
+        return (price.0 *25)/1000
+    }
+
 
 #[ext_contract(ext_self)]
 trait ExtSelf {

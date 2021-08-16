@@ -4,13 +4,12 @@ use crate::*;
 
 #[ext_contract(ext_contract)]
 trait ExtContract {
-    fn nft_transfer_payout(
+    fn nft_transfer(
         &mut self,
         receiver_id: AccountId,
         token_id: TokenId,
-        approval_id: u64,
+        approval_id: Option<u64>,
         memo: Option<String>,
-        balance: U128,
     );
     fn ft_transfer(
         &mut self,
