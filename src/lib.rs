@@ -3,10 +3,9 @@ use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::collections::{UnorderedSet, LookupMap, UnorderedMap};
 use near_sdk::env::STORAGE_PRICE_PER_BYTE;
 use near_contract_standards::storage_management::StorageBalanceBounds;
-use near_sdk::json_types::U128;
+use near_sdk::json_types::{U128,U64};
 use near_contract_standards::non_fungible_token::TokenId;
 use near_sdk::borsh::maybestd::collections::HashMap;
-use near_sdk::json_types::U64;
 use near_sdk::{
     near_bindgen, AccountId, PanicOnDefault, BorshStorageKey,
     Balance, assert_one_yocto, Promise, Gas,env,log,CryptoHash,ext_contract,promise_result_as_success};
