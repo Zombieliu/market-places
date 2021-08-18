@@ -9,6 +9,8 @@ use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
 
 
+const NFT_CONTRACT_NAME: &str = "nft";
+const MARKET_PLACES_NAME: &str = "marketplaces";
 
 
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
@@ -30,7 +32,7 @@ fn nft_init(
 
     let nft_contract_account = deploy! {
         contract: ContractContract,
-        contract_id: "contract1",
+        contract_id: NFT_CONTRACT_NAME,
         bytes: &TOKEN_WASM_BYTES,
         signer_account: nft_alice,
         init_method: new_default_meta(nft_alice_account_id)
@@ -53,7 +55,7 @@ fn market_places_init(
 
     let market_contract_account = deploy! {
         contract: MarketContract,
-        contract_id: "contract2",
+        contract_id: MARKET_PLACES_NAME,
         bytes: &MARKET_PLACES_WASM_BYTES,
         signer_account: market_bob,
         init_method: new(bob_account_id)
@@ -139,14 +141,19 @@ fn check_promise() {
     //test nft_approve to market_places
     let msg = Some(market_approve_data());
     let token_id2 = "P001".to_string();
-    let account_id = market_contract_account.account_id().try_into().unwrap();
+    let account_id:AccountId = market_contract_account.account_id().try_into().unwrap();
     // println!("{:#?}", account_id);
     let res2 =call!(
         nft_alice,
-        nft_contract.nft_approve(token_id2, account_id,msg),
+        nft_contract.nft_approve(
+            token_id2,
+            account_id.into(),
+            msg
+        ),
         deposit = STORAGE_AMOUNT
+
     );
     println!("{:#?}", res2);
-    println!("{:#?}",res2.unwrap_json_value());
+    // println!("{:#?}",res2.unwrap_json_value());
 
 }
